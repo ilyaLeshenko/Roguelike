@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <SFML/Graphics.hpp>
 #include <fstream>
+#include <optional>
 
 /*
     обозначени€ тайлов  
@@ -18,6 +19,9 @@
 
 class LevelManager {
 private:
+
+  std::vector<sf::Vector2i> exitBlocks_;   // где в карте сто€ли символы 'z'
+
   std::vector<std::string> levelData_;
 
   int width_ = 0;
@@ -31,7 +35,16 @@ private:
 
   sf::IntRect getRandomTileVariant(char tileType) const;
 
+
 public:
+  
+  /* ѕозволит RoomManager-у узнать, где сто€т выходы (СzТ) */
+  const std::vector<sf::Vector2i>& getExitBlocks() const { return exitBlocks_; }
+
+  /* вызвать, когда комната зачищена */
+  void unlockExits();
+
+  std::optional<sf::Vector2i> findTile(char tile) const;
   explicit LevelManager(const std::vector<std::string>& levelData = {});
   bool loadFromFile(const std::string& filePath);
 

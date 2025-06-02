@@ -4,6 +4,7 @@
 #include <iostream>
 #include <random>
 
+
 sf::IntRect LevelManager::getPathVariant(char tileType, int x, int y) const
 {
   /*bool left = (x > 0) && (getTile(x - 1, y) == '=');
@@ -352,7 +353,13 @@ bool LevelManager::loadFromFile(const std::string& filePath) {
       return false;
     }
   }
-
+  exitBlocks_.clear();
+  for (int y = 0; y < height_; ++y)
+      for (int x = 0; x < width_; ++x)
+          if (levelData_[y][x] == 'z') {
+              exitBlocks_.emplace_back(x, y);
+              levelData_[y][x] = 'b';      // сначала видим куст
+          }
   return true;
 }
 
@@ -491,7 +498,8 @@ void LevelManager::drawLevel(sf::RenderWindow& window) const {
 }
 bool LevelManager::isWall(int x, int y) const
 {
-  return getTile(x,y)=='b';
+  char t = getTile(x,y);
+    return t=='b' || t=='z';
 }
 
 bool LevelManager::isWalkable(int x, int y) const
@@ -517,4 +525,17 @@ std::pair<int, int> LevelManager::findNearbyWalkable(int x, int y, int radius) c
     }
   }
   return { -1, -1 }; // Если не нашли
+}
+
+std::optional<sf::Vector2i> LevelManager::findTile(char tile) const {
+    for (int y = 0; y < height_; ++y)
+        for (int x = 0; x < width_; ++x)
+            if (getTile(x, y) == tile) return sf::Vector2i(x, y);
+    return std::nullopt;
+}
+
+void LevelManager::unlockExits() {
+    for (auto& p : exitBlocks_)
+        setTile(p.x, p.y, '=');   // превращаем куст в тропинку-телепорт
+    /* exitBlocks_ БОЛЬШЕ НЕ очищаем – они нужны для проверки контакта */
 }

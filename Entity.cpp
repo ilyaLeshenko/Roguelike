@@ -1,11 +1,13 @@
 #include "Entity.h"
 #include "LevelManager.h"
 #include <iostream>
+#include <array>
+#include <cmath>
 
 void Entity::startDying() {
   isDying = true;
   canCollide = false;
-}
+}           
 
 void Entity::updateDeath(float deltaTime) {
   if (isDying) {
@@ -108,67 +110,63 @@ void Entity::onCollision(Entity* other) {
   other->sprite.setPosition(other->x, other->y);
 }
 
-void Entity::interactWithMap() {
-  if (!isSolid || !canCollide || !levelManager) return;
+void Entity::interactWithMap()
+{
+    if (!isSolid || !canCollide || !levelManager) return;
 
-  sf::FloatRect entityBounds = getGlobalBounds();
-  bool collided = false;
+    sf::FloatRect bounds = getGlobalBounds();
 
-  // ѕровер€ем 4 стороны объекта
-  std::vector<sf::Vector2f> checkPoints = {
-      {entityBounds.left, entityBounds.top + entityBounds.height / 2},          // лево
-      {entityBounds.left + entityBounds.width, entityBounds.top + entityBounds.height / 2}, // право
-      {entityBounds.left + entityBounds.width / 2, entityBounds.top},          // верх
-      {entityBounds.left + entityBounds.width / 2, entityBounds.top + entityBounds.height}  // низ
-  };
+    /* --- защита от выхода за нуль --- */
+    bool changed = false;
+    if (bounds.left < 0.f) { bounds.left = 0.f;          dx = 0; changed = true; }
+    if (bounds.top < 0.f) { bounds.top = 0.f;          dy = 0; changed = true; }
+    /* -------------------------------- */
 
-  for (const auto& point : checkPoints) {
-    int tileX = static_cast<int>(point.x / 32);
-    int tileY = static_cast<int>(point.y / 32);
+    /* четыре контрольные точки по сторонам сущности */
+    const std::array<sf::Vector2f, 4> probes = {
+        sf::Vector2f{bounds.left,                    bounds.top + bounds.height * 0.5f}, // L
+        sf::Vector2f{bounds.left + bounds.width,     bounds.top + bounds.height * 0.5f}, // R
+        sf::Vector2f{bounds.left + bounds.width * 0.5f,bounds.top},                        // T
+        sf::Vector2f{bounds.left + bounds.width * 0.5f,bounds.top + bounds.height}         // B
+    };
 
-    if (!levelManager->isWalkable(tileX, tileY)) {
-      sf::FloatRect tileBounds(tileX * 32.f, tileY * 32.f, 32.f, 32.f);
+    for (auto p : probes)
+    {
+        int tx = static_cast<int>(std::floor(p.x / 32.f));
+        int ty = static_cast<int>(std::floor(p.y / 32.f));
+        if (levelManager->isWalkable(tx, ty)) continue;
 
-      // –ассчитываем перекрытие
-      float overlapX = std::min(
-        entityBounds.left + entityBounds.width - tileBounds.left,
-        tileBounds.left + tileBounds.width - entityBounds.left
-      );
-      float overlapY = std::min(
-        entityBounds.top + entityBounds.height - tileBounds.top,
-        tileBounds.top + tileBounds.height - entityBounds.top
-      );
+        sf::FloatRect tile(tx * 32.f, ty * 32.f, 32.f, 32.f);
+        sf::FloatRect inter;
+        if (!bounds.intersects(tile, inter)) continue;               // нет пересечени€
 
-      if (overlapX > WALL_PENETRATION && overlapY > WALL_PENETRATION) {
-        if (overlapX < overlapY) {
-          //  оллизи€ по X
-          if (entityBounds.left < tileBounds.left) {
-            entityBounds.left = tileBounds.left - entityBounds.width + WALL_PENETRATION;
-          }
-          else {
-            entityBounds.left = tileBounds.left + tileBounds.width - WALL_PENETRATION;
-          }
+        /* сколько надо сдвинуть, чтобы осталась ровно WALL_PENETRATION */
+        if (inter.width < inter.height) {                            // столкновение по X
+            float push = inter.width - WALL_PENETRATION;
+            if (push > 0.f) {
+                bounds.left += (bounds.left < tile.left ? -push : push);
+                dx = 0;                                              // гасим горизонтальную скорость
+                changed = true;
+            }
         }
-        else {
-          //  оллизи€ по Y
-          if (entityBounds.top < tileBounds.top) {
-            entityBounds.top = tileBounds.top - entityBounds.height + WALL_PENETRATION;
-          }
-          else {
-            entityBounds.top = tileBounds.top + tileBounds.height - WALL_PENETRATION;
-          }
+        else {                                                     // столкновение по Y
+            float push = inter.height - WALL_PENETRATION;
+            if (push > 0.f) {
+                bounds.top += (bounds.top < tile.top ? -push : push);
+                dy = 0;                                              // гасим вертикальную скорость
+                changed = true;
+            }
         }
-        collided = true;
-      }
     }
-  }
 
-  if (collided) {
-    x = entityBounds.left + entityBounds.width / 2;
-    y = entityBounds.top + entityBounds.height / 2;
-    sprite.setPosition(x, y);
-  }
+    if (changed) {
+        x = bounds.left + bounds.width * 0.5f;
+        y = bounds.top + bounds.height * 0.5f;
+        sprite.setPosition(x, y);
+    }
 }
+
+
 
 sf::FloatRect Entity::getGlobalBounds() const {
   return sf::FloatRect(x - width / 2, y - height / 2, width, height);

@@ -68,7 +68,7 @@ bool WaveManager::isWaveCleared() const {
 }
 
 bool WaveManager::areAllWavesDone() const {
-  return currentWaveIndex >= waves.size();
+  return currentWaveIndex >= waves.size() && monsters.empty();
 }
 
 void WaveManager::startNextWave(Player* player) {
