@@ -1,19 +1,46 @@
-п»ї#include "GameManager.h"
+#include "GameManager.h"
 #include "PlayerCamera.h"
 #include <iostream>
 #include "MonsterFactory.h"
 
-// ========================
-// РљРѕРЅСЃС‚СЂСѓРєС‚РѕСЂ Рё Singleton
-// ========================
 GameManager::GameManager()
   : currentState(GameState::MAIN_MENU),
   shopLoaded(false),
   currentRoomIndex(0),
   allRoomsCompleted(false),
-  windowPtr(nullptr),
-  escWasPressedLastFrame(false)
-{
+  windowPtr(nullptr) {
+
+}
+
+void GameManager::returnToLobby() {
+  currentState = GameState::LOBBY;
+
+  player->reset();
+
+  const sf::Vector2f p = lobby.getSpawnPoint();
+  player->x = p.x;
+  player->y = p.y;
+  player->sprite.setPosition(p);
+
+  player->setLevelManager(&lobby.getLevelManager());
+  roomManager->init(player.get(), &lobby.getLevelManager());
+  if (allRoomsCompleted) {
+    std::cout << "All rooms completed! Congratulations!" << std::endl;
+    allRoomsCompleted = false;
+  }
+  roomManager->resetWaves();
+  currentRoomIndex = 0;
+}
+
+void GameManager::togglePause() {
+  if (currentState == GameState::INGAME) {
+    currentState = GameState::PAUSED;
+    std::cout << "Game PAUSED" << std::endl;
+  }
+  else if (currentState == GameState::PAUSED) {
+    currentState = GameState::INGAME;
+    std::cout << "Game RESUMED" << std::endl;
+  }
 }
 
 GameManager& GameManager::getInstance() {
@@ -21,127 +48,84 @@ GameManager& GameManager::getInstance() {
   return instance;
 }
 
-// ========================
-// РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ
-// ========================
 void GameManager::initialize(sf::RenderWindow& window) {
   windowPtr = &window;
-
-  // Р—Р°РіСЂСѓР·РєР° С€СЂРёС„С‚Р°
   if (!font.loadFromFile("font/minecraft_0.ttf")) {
     std::cerr << "Failed to load font!" << std::endl;
   }
-
-  // HUD-С‚РµРєСЃС‚
+  sf::Image cursorImage;
+  cursorImage.loadFromFile("image/aim.png");
+  if (
+      !customCursor.loadFromPixels(
+          cursorImage.getPixelsPtr(),
+          cursorImage.getSize(),
+          sf::Vector2u(16, 16)
+      )) {
+      std::cerr << "Failed to load cursor!" << std::endl;
+  }
+  window.setMouseCursor(customCursor);
   hudText.setFont(font);
   hudText.setCharacterSize(24);
   hudText.setFillColor(sf::Color::White);
 
-  // Р РµРіРёСЃС‚СЂР°С†РёСЏ РјРѕРЅСЃС‚СЂРѕРІ
   MonsterFactory::registerType<Slime>("SLIME");
   MonsterFactory::registerType<Ghost>("GHOST");
   MonsterFactory::registerType<Skeleton>("SKELETON");
-
-  // Р—Р°РіСЂСѓР·РєР° СЂРµСЃСѓСЂСЃРѕРІ РґР»СЏ MainMenu, Lobby Рё Shop
+  lobby.loadResources();
   mainMenu.loadResources();
-  lobby.loadResources(font);
   shop.loadResources();
 
-  // РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ СЃРёСЃС‚РµРјС‹ РїСЂРѕС„РёР»РµР№
-  profileManager = std::make_unique<ProfileManager>("profiles.txt");
-  profileManager->loadProfiles();
-  profileSelectScreen = std::make_unique<ProfileSelect>(font, *profileManager);
-  profileNewInputScreen = std::make_unique<ProfileNewInput>(font);
-  // РЎСЂР°Р·Сѓ РїРѕСЃС‚СЂРѕРёРј РєРЅРѕРїРєРё СЃРїРёСЃРєР° РїРѕРґ СЂР°Р·РјРµСЂ РѕРєРЅР°
-  profileSelectScreen->rebuildButtons(window.getSize());
-
-  // РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ СѓСЂРѕРІРЅСЏ Рё РєРѕРјРЅР°С‚
   levelManager = std::make_unique<LevelManager>();
   roomManager = std::make_unique<RoomManager>();
-
-  // РЎРѕР·РґР°РЅРёРµ РёРіСЂРѕРєР° Рё РІС‹РґР°С‡Р° РѕСЂСѓР¶РёСЏ
-  player = std::make_unique<Player>(500, 320, 32, 32,
-    "image/heroTileSet.png",
-    levelManager.get());
+  player = std::make_unique<Player>(500, 320, 32, 32, "image/heroTileSet.png", levelManager.get());
   player->setWeapon(std::make_unique<Bow>(50, 10, 200));
-
-  // Р—Р°РіСЂСѓР·РєР° Р»РѕР±Р±Рё РІ levelManager
   levelManager->loadFromFile("data/lobby.txt");
   levelManager->loadTileset("image/map.png");
 
-  // РљРЅРѕРїРєР° В«Return to LobbyВ» (РїРѕР·РёС†РёСЋ Р·Р°РґР°С‘Рј РїСЂРё РѕС‚СЂРёСЃРѕРІРєРµ)
-  returnToLobbyButton = std::make_unique<Button>("Return to Lobby", font,
-    sf::Vector2f(200.f, 40.f));
-  returnToLobbyButton->setPosition({ 0.f, 0.f });
-  returnToLobbyButton->setColors(
-    sf::Color::White,
-    sf::Color::Transparent,
-    sf::Color::Transparent,
-    sf::Color(80, 80, 120)
-  );
-
-  // РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ РјРµРЅРµРґР¶РµСЂР° РєРѕРјРЅР°С‚
   roomManager->init(player.get(), levelManager.get());
-
-  // РќР°С‡Р°Р»СЊРЅС‹Р№ РІРёРґ
   currentView = window.getDefaultView();
+  //, например, стартовая зона  (x = 600, y = 120, ширина 80, высота 40)
+  lobby.setExitZone({ 380, 0, 130, 160 });
+
+  //, а появление игрока в лобби – в центре этой зоны
+  lobby.setSpawnPoint({ 450, 330 });
 }
 
-// ========================
-// РџРѕСЃС‚СЂРѕРµРЅРёРµ HUD
-// ========================
-void GameManager::drawUI(const sf::View& view) {
-  if (!player) return;
-  hudText.setString(
-    "HP: " + std::to_string(player->getHP()) +
-    "  Money: " + std::to_string(player->getMoney())
-  );
-  hudText.setPosition(view.getCenter().x - 380.f,
-    view.getCenter().y - 270.f);
-  windowPtr->draw(hudText);
+void GameManager::drawUI(const sf::View& /*worldView*/) {
+    if (!player || !windowPtr) return;
+
+    // 1. Сохраняем текущий вид (обычно — worldView)
+    sf::View oldView = windowPtr->getView();
+
+    // 2. Переходим во «вью» окна, которое всегда совпадает с размерами экрана
+    windowPtr->setView(windowPtr->getDefaultView());
+
+    // 3. Обновляем текст HUD
+    hudText.setString(
+        "HP: " + std::to_string(player->getHP()) +
+        "  Money: " + std::to_string(player->getMoney())
+    );
+    hudText.setPosition(600.f, 10.f);   // всегда левый-верхний угол
+    windowPtr->draw(hudText);
+    hudText.setCharacterSize(15);
+    hudText.setFillColor(sf::Color::White);
+    // 4. Возвращаем старый вид, чтобы дальнейшая отрисовка шла в «мире»
+    windowPtr->setView(oldView);
 }
 
-// ========================
-// РћР±РЅРѕРІР»РµРЅРёРµ (РєР°Р¶РґС‹Р№ РєР°РґСЂ)
-// ========================
 void GameManager::update(float deltaTime) {
   if (!windowPtr) return;
-
-  // Р“Р»РѕР±Р°Р»СЊРЅР°СЏ РїРѕР·РёС†РёСЏ РєСѓСЂСЃРѕСЂР° РІ РјРёСЂРµ
-  sf::Vector2f mousePosWorld = windowPtr->mapPixelToCoords(
-    sf::Mouse::getPosition(*windowPtr),
-    currentView
-  );
+  sf::Vector2f mousePos = windowPtr->mapPixelToCoords(sf::Mouse::getPosition(*windowPtr));
 
   switch (currentState) {
-    // ---- Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ ----
   case GameState::MAIN_MENU: {
-    mainMenu.update(mousePosWorld);
+    mainMenu.update(mousePos);
     break;
   }
-
-                           // ---- Р’С‹Р±РѕСЂ РїСЂРѕС„РёР»СЏ ----
-  case GameState::PROFILE_SELECT: {
-    sf::Vector2f mouseScreenPos = windowPtr->mapPixelToCoords(
-      sf::Mouse::getPosition(*windowPtr),
-      windowPtr->getDefaultView()
-    );
-    profileSelectScreen->handleHover(mouseScreenPos);
-    break;
-  }
-
-                                // ---- Р’РІРѕРґ РЅРѕРІРѕРіРѕ РїСЂРѕС„РёР»СЏ ----
-  case GameState::PROFILE_NEW_INPUT: {
-    // РћР±СЂР°Р±РѕС‚РєР° РІРІРѕРґР° С‚РµРєСЃС‚Р° РІ handleEvent
-    break;
-  }
-
-                                   // ---- Р›РѕР±Р±Рё ----
-  case GameState::LOBBY: {
+  case GameState::LOBBY:
     player->update(deltaTime);
     lobby.update(deltaTime, *player);
 
-    // РџРµСЂРµСЃС‡С‘С‚ РІРёРґР° РєР°РјРµСЂС‹
     currentView = PlayerCamera::getViewForPlayer(
       player->getPlayerCoordinateX(),
       player->getPlayerCoordinateY(),
@@ -150,43 +134,12 @@ void GameManager::update(float deltaTime) {
       windowPtr->getSize().y
     );
 
-    // РћР±СЂР°Р±РѕС‚РєР° РєРЅРѕРїРєРё В«Exit to MenuВ»
-    {
-      sf::Vector2f mouseScreenPos = windowPtr->mapPixelToCoords(
-        sf::Mouse::getPosition(*windowPtr),
-        windowPtr->getDefaultView()
-      );
-      if (lobby.isExitToMenuPressed(mouseScreenPos)) {
-        if (!currentProfileName.empty() && player) {
-          // РћР±РЅРѕРІР»СЏРµРј РїСЂРѕС„РёР»СЊ РІ РїР°РјСЏС‚Рё
-          for (auto& pr : const_cast<std::vector<Profile>&>(
-            profileManager->getProfiles())) {
-            if (pr.name == currentProfileName) {
-              pr.money = player->getMoney();
-              pr.maxHP = player->getHP();
-              if (player->getWeapon())
-                pr.strength = player->getWeapon()->damage;
-              pr.speed = player->getSpeedMultiplier();
-              break;
-            }
-          }
-          profileManager->saveProfiles();
-        }
-        currentState = GameState::MAIN_MENU;
-        return;
-      }
-    }
-
-    // РљР»Р°РІРёС€Р° В«EВ» в†’ СЃС‚Р°СЂС‚ Р±РµРіР°
-    if (lobby.isPlayerInExitZone(player->getPosition()) &&
-      sf::Keyboard::isKeyPressed(sf::Keyboard::E)) {
+    if (lobby.isPlayerInExitZone(player->getPosition()) && sf::Keyboard::isKeyPressed(sf::Keyboard::E)) {
       startRun();
     }
     break;
-  }
 
-                       // ---- InGame ----
-  case GameState::INGAME: {
+  case GameState::INGAME:
     player->update(deltaTime);
     roomManager->update(deltaTime);
 
@@ -198,102 +151,64 @@ void GameManager::update(float deltaTime) {
       windowPtr->getSize().y
     );
 
-    // РЎС‚СЂРµР»СЊР±Р° Р»РµРІРѕР№ РєРЅРѕРїРєРѕР№
     if (sf::Mouse::isButtonPressed(sf::Mouse::Left)) {
-      player->attack(mousePosWorld);
+      player->attack(mousePos);
     }
 
     if (!player->life) {
       returnToLobby();
     }
-    else if (roomManager->isRoomCleared() && !roomManager->isWaiting()) {
-      currentRoomIndex++;
-      loadNextRoom();
+    else if (roomManager->isRoomCleared() &&
+        roomManager->isPlayerNearExit() &&
+        sf::Keyboard::isKeyPressed(sf::Keyboard::E)) {
+
+        currentRoomIndex++;
+        loadNextRoom();
     }
     break;
-  }
 
-                        // ---- Shop ----
-  case GameState::SHOP: {
-    shop.update(mousePosWorld, *player);
-    if (shop.isExitPressed(mousePosWorld)) {
-      saveProfiles();
+  case GameState::SHOP:
+    shop.update(mousePos, *player);
+    if (shop.isExitPressed(mousePos)) {
       currentState = GameState::LOBBY;
     }
     break;
-  }
 
-                      // ---- Paused ----
-  case GameState::PAUSED: {
-    sf::Vector2f mouseScreenPos = windowPtr->mapPixelToCoords(
-      sf::Mouse::getPosition(*windowPtr),
-      windowPtr->getDefaultView()
-    );
-    returnToLobbyButton->update(mouseScreenPos);
-    if (returnToLobbyButton->isPressed()) {
-      returnToLobby();
-    }
-    break;
-  }
-
-  default:
+  case GameState::PAUSED:
     break;
   }
 }
 
-// ========================
-// РћС‚СЂРёСЃРѕРІРєР° (РєР°Р¶РґС‹Р№ РєР°РґСЂ)
-// ========================
 void GameManager::render(sf::RenderWindow& window) {
   window.clear();
+  window.setView(currentView);
 
   switch (currentState) {
-  case GameState::MAIN_MENU: {
-    window.setView(window.getDefaultView());
+  case GameState::MAIN_MENU:
     mainMenu.draw(window);
     break;
-  }
 
-  case GameState::PROFILE_SELECT: {
-    window.setView(window.getDefaultView());
-    profileSelectScreen->draw(window);
-    break;
-  }
-
-  case GameState::PROFILE_NEW_INPUT: {
-    window.setView(window.getDefaultView());
-    profileNewInputScreen->draw(window);
-    break;
-  }
-
-  case GameState::LOBBY: {
-    window.setView(currentView);
+  case GameState::LOBBY:
     lobby.draw(window);
     player->draw(window);
     drawUI(currentView);
     break;
-  }
 
-  case GameState::INGAME: {
-    window.setView(currentView);
-    levelManager->drawLevel(window);
-    player->draw(window);
-    roomManager->draw(window);
-    player->drawWeapon(window);
-    roomManager->drawUI(window, currentView);
-    drawUI(currentView);
-    break;
-  }
-
-  case GameState::SHOP: {
-    window.setView(window.getDefaultView());
+  case GameState::SHOP:
     shop.draw(window);
     drawUI(currentView);
     break;
-  }
 
-  case GameState::PAUSED: {
-    window.setView(currentView);
+  case GameState::INGAME:
+    levelManager->drawLevel(window);
+    player->draw(window);
+    roomManager->draw(window);
+    player->drawWeapon(window);
+    roomManager->drawUI(window, currentView);
+    drawUI(currentView);
+    break;
+
+  case GameState::PAUSED:
     levelManager->drawLevel(window);
     player->draw(window);
     roomManager->draw(window);
@@ -301,197 +216,28 @@ void GameManager::render(sf::RenderWindow& window) {
     roomManager->drawUI(window, currentView);
     drawUI(currentView);
 
-    sf::View prevView = window.getView();
-    window.setView(window.getDefaultView());
+    // Затем рисуем паузу поверх всего
+    sf::RectangleShape overlay(sf::Vector2f(window.getSize().x, window.getSize().y));
+    overlay.setFillColor(sf::Color(0, 0, 0, 150));
 
-    sf::Text pausedText("PAUSED (Press ESC to resume)", font, 40);
-    sf::FloatRect textBounds = pausedText.getLocalBounds();
-    pausedText.setOrigin(
-      textBounds.left + textBounds.width / 2.f,
-      textBounds.top + textBounds.height / 2.f
-    );
-    pausedText.setPosition(
-      window.getSize().x / 2.f,
-      window.getSize().y / 2.f - 30.f
-    );
-    window.draw(pausedText);
+    // Позиционируем оверлей относительно камеры
+    overlay.setPosition(currentView.getCenter() - currentView.getSize() / 2.f);
+    window.draw(overlay);
 
-    const float btnWidth = 200.f;
-    const float btnHeight = 40.f;
-    float btnX = (window.getSize().x - btnWidth) / 2.f;
-    float btnY = (window.getSize().y / 2.f) + 10.f;
-    returnToLobbyButton->setPosition({ btnX, btnY });
-    returnToLobbyButton->draw(window);
-
-    window.setView(prevView);
+    sf::Text text("PAUSED (Press ESC to resume)", font, 40);
+    // Центрируем текст относительно камеры
+    sf::FloatRect textRect = text.getLocalBounds();
+    text.setOrigin(textRect.left + textRect.width / 2.0f,
+      textRect.top + textRect.height / 2.0f);
+    text.setPosition(currentView.getCenter());
+    window.draw(text);
     break;
   }
-
-  default:
-    break;
-  }
-
-  window.display();
-}
-
-// ========================
-// РћР±СЂР°Р±РѕС‚С‡РёРє СЃРѕР±С‹С‚РёР№
-// ========================
-void GameManager::handleEvent(const sf::Event& event) {
-  // --- 1) Р’РІРѕРґ РёРјРµРЅРё РЅРѕРІРѕРіРѕ РїСЂРѕС„РёР»СЏ ---
-  if (currentState == GameState::PROFILE_NEW_INPUT) {
-    if (event.type == sf::Event::TextEntered) {
-      bool ready = profileNewInputScreen->handleTextEvent(event);
-      if (ready) {
-        newProfileName = profileNewInputScreen->getCurrentString();
-        Profile newP;
-        newP.name = newProfileName;
-        newP.money = 0;
-        newP.maxHP = 100;
-        newP.strength = 10;
-        newP.speed = 0.1f;
-        profileManager->addProfile(newP);
-        profileManager->saveProfiles();
-
-        applyProfile(newProfileName);
-        currentState = GameState::LOBBY;
-        profileSelectScreen->rebuildButtons(windowPtr->getSize());
-      }
-    }
-    return;
-  }
-
-  // --- 2) Р­РєСЂР°РЅ РІС‹Р±РѕСЂР° РїСЂРѕС„РёР»СЏ ---
-  if (currentState == GameState::PROFILE_SELECT) {
-    if (event.type == sf::Event::MouseWheelScrolled) {
-      profileSelectScreen->handleScroll(event.mouseWheelScroll.delta);
-      return;
-    }
-    if (event.type == sf::Event::MouseButtonPressed) {
-      sf::Vector2f mouseScreenPos = windowPtr->mapPixelToCoords(
-        sf::Mouse::getPosition(*windowPtr),
-        windowPtr->getDefaultView()
-      );
-      profileSelectScreen->handleHover(mouseScreenPos);
-      std::string selection = profileSelectScreen->handleClick(mouseScreenPos);
-      if (!selection.empty()) {
-        if (selection == "__NEW__") {
-          newProfileName.clear();
-          profileNewInputScreen = std::make_unique<ProfileNewInput>(font);
-          currentState = GameState::PROFILE_NEW_INPUT;
-        }
-        else if (selection == "__BACK__") {
-          currentState = GameState::MAIN_MENU;
-        }
-        else {
-          applyProfile(selection);
-          currentState = GameState::LOBBY;
-        }
-        profileSelectScreen->rebuildButtons(windowPtr->getSize());
-      }
-    }
-    return;
-  }
-
-  // --- 3) Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ: РєР»РёРє Play/Exit ---
-  if (currentState == GameState::MAIN_MENU && event.type == sf::Event::MouseButtonPressed) {
-    sf::Vector2f mouseScreenPos = windowPtr->mapPixelToCoords(
-      sf::Mouse::getPosition(*windowPtr),
-      windowPtr->getDefaultView()
-    );
-    if (mainMenu.isPlayClicked(mouseScreenPos)) {
-      startProfileSelect();
-      profileSelectScreen->rebuildButtons(windowPtr->getSize());
-      return;
-    }
-    if (mainMenu.isExitClicked(mouseScreenPos)) {
-      saveProfiles();
-      windowPtr->close();
-      return;
-    }
-  }
-
-  // --- 4) РљР»Р°РІРёС€Рё ESC / Space РґР»СЏ РїР°СѓР·С‹ Рё СЃС‚Р°СЂС‚Р° ---
-  if (event.type == sf::Event::KeyPressed) {
-    if (event.key.code == sf::Keyboard::Escape) {
-      togglePause();
-      return;
-    }
-    if (event.key.code == sf::Keyboard::Space &&
-      currentState == GameState::LOBBY) {
-      startRun();
-      return;
-    }
-  }
-
-  // --- 5) InGame: РєР»РёРє РјС‹С€Рё в†’ Р°С‚Р°РєР° ---
-  if (currentState == GameState::INGAME && event.type == sf::Event::MouseButtonPressed) {
-    sf::Vector2f mousePosWorld = windowPtr->mapPixelToCoords(
-      sf::Mouse::getPosition(*windowPtr),
-      windowPtr->getDefaultView()
-    );
-    player->attack(mousePosWorld);
-    return;
-  }
-
-  // --- 6) РњР°РіР°Р·РёРЅ: РєР»РёРє Exit ---
-  if (currentState == GameState::SHOP && event.type == sf::Event::MouseButtonPressed) {
-    sf::Vector2f mousePosWorld = windowPtr->mapPixelToCoords(
-      sf::Mouse::getPosition(*windowPtr),
-      windowPtr->getDefaultView()
-    );
-    if (shop.isExitPressed(mousePosWorld)) {
-      currentState = GameState::LOBBY;
-      return;
-    }
-  }
-
-  // --- 7) РџР°СѓР·Р°: РєР»РёРє Return to Lobby ---
-  if (currentState == GameState::PAUSED && event.type == sf::Event::MouseButtonPressed) {
-    sf::Vector2f mouseScreenPos = windowPtr->mapPixelToCoords(
-      sf::Mouse::getPosition(*windowPtr),
-      windowPtr->getDefaultView()
-    );
-    returnToLobbyButton->update(mouseScreenPos);
-    if (returnToLobbyButton->isPressed()) {
-      returnToLobby();
-      return;
-    }
-  }
-}
-
-// ========================
-// Р—Р°РіСЂСѓР·РєР° РІС‹Р±СЂР°РЅРЅРѕРіРѕ РїСЂРѕС„РёР»СЏ
-// ========================
-void GameManager::applyProfile(const std::string& profileName) {
-  auto opt = profileManager->getProfile(profileName);
-  if (!opt.has_value()) return;
-  Profile p = opt.value();
-
-  currentProfileName = profileName;
-  if (!player) {
-    player = std::make_unique<Player>(500, 320, 32, 32,
-      "image/heroTileSet.png",
-      levelManager.get());
-    player->setWeapon(std::make_unique<Bow>(50, 10, 200));
-  }
-  player->setMoney(p.money);
-  player->setMaxHP(p.maxHP);
-  player->setStrength(p.strength);
-  player->setSpeedMultiplier(p.speed);
-  player->reset();
-}
-
-// ========================
-// РџРµСЂРµС…РѕРґС‹ СЃРѕСЃС‚РѕСЏРЅРёР№
-// ========================
-void GameManager::startProfileSelect() {
-  profileManager->loadProfiles();
-  profileSelectScreen->rebuildButtons(windowPtr->getSize());
-  currentState = GameState::PROFILE_SELECT;
 }
 
 void GameManager::startGame() {
+  player->setLevelManager(&lobby.getLevelManager());
+  roomManager->init(player.get(), &lobby.getLevelManager());
   currentState = GameState::LOBBY;
   sf::sleep(sf::milliseconds(100));
   std::cout << "Switched to LOBBY" << std::endl;
@@ -500,60 +246,11 @@ void GameManager::startGame() {
 void GameManager::startRun() {
   currentRoomIndex = 0;
   allRoomsCompleted = false;
+  player->setLevelManager(levelManager.get());
+  roomManager->init(player.get(), levelManager.get());
   loadNextRoom();
 }
 
-void GameManager::returnToLobby() {
-  saveProfiles();
-  currentState = GameState::LOBBY;
-  player->reset();
-  player->hp=player->maxHP;
-  if (allRoomsCompleted) {
-    std::cout << "All rooms completed! Congratulations!" << std::endl;
-    allRoomsCompleted = false;
-  }
-  currentRoomIndex = 0;
-}
-
-void GameManager::togglePause() {
-  if (currentState == GameState::INGAME) {
-    currentState = GameState::PAUSED;
-    std::cout << "Game PAUSED" << std::endl;
-  }
-  else if (currentState == GameState::PAUSED) {
-    saveProfiles();
-    currentState = GameState::INGAME;
-    std::cout << "Game RESUMED" << std::endl;
-  }
-}
-
-void GameManager::enterShop() {
-  currentState = GameState::SHOP;
-  player->sprite.setPosition(500.f, 320.f);
-  if (!shopLoaded) {
-    shop.loadResources();
-    shopLoaded = true;
-  }
-}
-
-void GameManager::returnToMainMenu() {
-  currentState = GameState::MAIN_MENU;
-  player->reset();
-  currentRoomIndex = 0;
-  allRoomsCompleted = false;
-}
-
-bool GameManager::isPlayClicked(const sf::Vector2f& mousePos) {
-  return mainMenu.isPlayClicked(mousePos);
-}
-
-bool GameManager::isExitClicked(const sf::Vector2f& mousePos) {
-  return mainMenu.isExitClicked(mousePos);
-}
-
-// ========================
-// Р—Р°РіСЂСѓР·РєР° СЃР»РµРґСѓСЋС‰РµР№ РєРѕРјРЅР°С‚С‹
-// ========================
 void GameManager::loadNextRoom() {
   if (currentRoomIndex >= roomList.size()) {
     allRoomsCompleted = true;
@@ -562,35 +259,34 @@ void GameManager::loadNextRoom() {
   }
 
   if (!levelManager->loadFromFile("data/" + roomList[currentRoomIndex])) {
-    std::cerr << "Failed to load room: "
-      << roomList[currentRoomIndex] << std::endl;
+    std::cerr << "Failed to load room: " << roomList[currentRoomIndex] << std::endl;
     return;
   }
+
   std::string roomName = roomList[currentRoomIndex];
   roomName = roomName.substr(0, roomName.find_last_of('.'));
+
   roomManager->loadRoom(roomName);
+  roomManager->resetWaves();
+  // NEW: ищем ‘r’ и ставим игрока по центру тайла
+  if (auto pos = levelManager->findTile('r')) {
+      sf::Vector2f spawn((pos->x + 0.5f) * 32.f, (pos->y + 0.5f) * 32.f);
+      player->x = spawn.x;
+      player->y = spawn.y;
+      player->sprite.setPosition(spawn);
+      levelManager->setTile(pos->x, pos->y, '=');   // превращаем ‘r’ в обычный пол
+  }
+
   currentState = GameState::INGAME;
   std::cout << "Loading room: " << roomName << std::endl;
 }
 
-// ========================
-// РЎРѕС…СЂР°РЅРµРЅРёРµ РїСЂРѕС„РёР»РµР№
-// ========================
-void GameManager::saveProfiles() {
-  if (!profileManager) return;
-
-  if (!currentProfileName.empty() && player) {
-    for (auto& pr : const_cast<std::vector<Profile>&>(
-      profileManager->getProfiles())) {
-      if (pr.name == currentProfileName) {
-        pr.money = player->getMoney();
-        pr.maxHP = player->maxHP;
-        if (player->getWeapon())
-          pr.strength = player->getWeapon()->damage;
-        pr.speed = player->getSpeedMultiplier();
-        break;
-      }
-    }
+void GameManager::enterShop() {
+  currentState = GameState::SHOP;
+  // Сбрасываем позицию игрока при входе в магазин
+  player->sprite.setPosition(500, 320);
+  if (!shopLoaded) {
+    shop.loadResources();
+    shopLoaded = true;
   }
-  profileManager->saveProfiles();
 }

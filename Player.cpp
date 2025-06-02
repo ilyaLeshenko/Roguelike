@@ -1,40 +1,13 @@
 #include "Player.h"
-#include "GameManager.h"
 #include <iostream>
-//Player::Player(float _x, float _y, float _height, float _width, std::string way, LevelManager* lvlMgr) :Entity(_x, _y, _height, _width, way, lvlMgr) { 
-//  levelManager = lvlMgr; 
-//  usePixelPerfect = true;
-//  if (!texture.loadFromFile(way)) {
-//    std::cerr << "Failed to load player texture: " << way << std::endl;
-//  }
-//  sprite.setOrigin(width / 2, height / 2);
-//  maxHP = 100;
-//}
-
-Player::Player(float _x, float _y, float _height, float _width, std::string way, LevelManager* lvlMgr)
-  : Entity(_x, _y, _height, _width, way, lvlMgr)
-{
-  levelManager = lvlMgr;
+Player::Player(float _x, float _y, float _height, float _width, std::string way, LevelManager* lvlMgr) :Entity(_x, _y, _height, _width, way, lvlMgr) { 
+  levelManager = lvlMgr; 
   usePixelPerfect = true;
   if (!texture.loadFromFile(way)) {
     std::cerr << "Failed to load player texture: " << way << std::endl;
   }
   sprite.setOrigin(width / 2, height / 2);
   maxHP = 100;
-  hp = maxHP;
-  money = 0;
-  baseSpeed = 0.1f; // дефолт, если профиль не загружен
-}
-
-void Player::loadProfileStats(int hpValue, int damageValue, float speedMultiplier, int startingMoney) {
-  maxHP = hpValue;
-  hp = hpValue;
-  money = startingMoney;
-  baseSpeed = speedMultiplier;
-
-  if (currentWeapon) {
-    currentWeapon->damage = damageValue;
-  }
 }
 
 void Player::control(float deltaTime)
@@ -108,25 +81,19 @@ void Player::update(float deltaTime)
     }
   }
   // Применяем модификаторы скорости
-  //float speedModifier = hasStatusEffect(StatusEffectType::Freezing) ? 0.5f : 1.0f;
   float speedModifier = hasStatusEffect(StatusEffectType::Freezing) ? 0.5f : 1.0f;
-  if (dir != 0) {
-    // Используем базовую скорость из профиля
-    setPlayerSpeed(baseSpeed * speedModifier);
-  }
-
-
-  //if (dir != 0) setPlayerSpeed(0.1 * speedModifier);
+  
+  if (dir != 0) setPlayerSpeed(0.1 * speedModifier);
 
   switch (dir) {
   case 0: dx = 0; dy = 0; break;
-  case 1: dx = 0; dy = -1.41 * speed; break;
+  case 1: dx = 0; dy = -1.41*speed; break;
   case 2: dx = speed; dy = -speed; break;
-  case 3: dx = 1.41 * speed; dy = 0; break;
+  case 3: dx = 1.41 *speed; dy = 0; break;
   case 4: dx = speed; dy = speed; break;
-  case 5: dx = 0; dy = 1.41 * speed; break;
+  case 5: dx = 0; dy = 1.41 *speed; break;
   case 6: dx = -speed; dy = speed; break;
-  case 7: dx = -1.41 * speed; dy = 0; break;
+  case 7: dx = -1.41 *speed; dy = 0; break;
   case 8: dx = -speed; dy = -speed; break;
   }
   x += dx * 1000 * deltaTime;
@@ -135,15 +102,12 @@ void Player::update(float deltaTime)
   speed = 0;
   dir = 0;
   interactWithMap();
-  if (hp <= 0) { 
-    life = false; 
-  GameManager::getInstance().saveProfiles();
-  }
+  if (hp<= 0) {life=false;}
   sprite.setPosition(x, y);
   if (currentWeapon) {
     currentWeapon->update(deltaTime);
   }
-
+  
 }
 
 void Player::drawWeapon(sf::RenderWindow& window)
@@ -153,43 +117,30 @@ void Player::drawWeapon(sf::RenderWindow& window)
   }
 }
 
-//void Player::upgradeHP(int amount)
-//{
-//  maxHP += amount;
-//  hp = maxHP;
-//}
-//
-//void Player::upgradeDamage(int amount)
-//{
-//  currentWeapon->damage += amount;
-//}
-//
-//void Player::upgradeSpeed(float amount)
-//{
-//  currentWeapon->attackSpeed *= amount;
-//}
-
-void Player::upgradeHP(int amount) {
+void Player::upgradeHP(int amount)
+{
   maxHP += amount;
   hp = maxHP;
 }
 
-void Player::upgradeDamage(int amount) {
-  if (currentWeapon) {
-    currentWeapon->damage += amount;
-  }
+void Player::upgradeDamage(int amount)
+{
+  currentWeapon->damage += amount;
 }
 
-void Player::upgradeSpeed(float amount) {
-  baseSpeed *= amount; // увеличиваем базовый множитель скорости
+void Player::upgradeSpeed(float amount)
+{
+  currentWeapon->attackSpeed *= amount;
 }
 
 void Player::reset()
 {
-  life = true;
-  hp = maxHP;
+    life = true;
+    hp = maxHP;
+    isDying = false;   // снова «живой», нужен для checkCollision
+    canCollide = true;    // включаем столкновения со всем
+    deathTimer = 0.f;     // обнуляем таймер анимации смерти
 }
-
 void Player::addMoney(int _money)
 {
   money += _money;
